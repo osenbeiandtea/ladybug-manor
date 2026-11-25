@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ladybug Manor — てんとう虫の館</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Shippori+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--night:#17110d;--ink:#f1e4c8;--soft:#bfae8c;--brass:#c9a04a;--lady:#cf2b20;
+ --disp:'Cormorant Garamond','Shippori Mincho',serif;--body:'Shippori Mincho','Hiragino Mincho ProN','Yu Mincho',serif;color-scheme:dark}
+*{box-sizing:border-box}
+html{background:var(--night)}
+body{margin:0;color:var(--ink);font-family:var(--body);line-height:1.8;min-height:100vh;
+ background:radial-gradient(ellipse at 50% -10%,#3b2a1c 0,#17110d 62%),var(--night);padding-bottom:40px}
+.wrap{max-width:560px;margin:0 auto;padding:0 18px}
+header{text-align:center;padding:54px 0 26px;position:relative}
+.orn{color:var(--brass);letter-spacing:.5em;font-size:13px;opacity:.85}
+h1{margin:10px 0 0;font-family:var(--disp);font-weight:500;font-size:44px;line-height:1.1;letter-spacing:.03em}
+h1 em{color:var(--brass);font-style:italic}
+.sub{margin:8px 0 0;font-size:20px;letter-spacing:.35em;color:var(--ink);font-weight:700;text-indent:.35em}
+.bug{display:inline-block;width:28px;height:22px;margin-top:20px;border-radius:50% 50% 46% 46%;background:var(--lady);position:relative;box-shadow:0 2px 6px #0008;animation:crawl 7s ease-in-out infinite}
+.bug:before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:#17110d;transform:translateX(-50%)}
+.bug:after{content:"";position:absolute;left:5px;top:6px;width:5px;height:5px;border-radius:50%;background:#17110d;box-shadow:12px 4px 0 #17110d,2px 9px 0 #17110d}
+@keyframes crawl{0%,100%{transform:translateX(-46px) rotate(-12deg)}50%{transform:translateX(46px) rotate(12deg)}}
+.story{margin:6px 0 22px;padding:18px 18px;border:1px solid #8a6f36;outline:1px solid rgba(201,160,74,.3);outline-offset:4px;background:rgba(201,160,74,.06);text-align:center;font-size:15px}
+.story b{color:var(--brass);font-weight:700}
+.start{display:block;margin:0 auto 34px;width:100%;max-width:340px;text-align:center;padding:15px;color:var(--night);background:var(--brass);font-weight:700;font-size:17px;letter-spacing:.2em;text-decoration:none;border-radius:2px;box-shadow:0 4px 14px #0007}
+h2{font-family:var(--disp);font-weight:500;font-size:22px;text-align:center;margin:0 0 14px;color:var(--brass);letter-spacing:.1em}
+.room{display:block;position:relative;margin:0 0 16px;border:1px solid #8a6f36;text-decoration:none;color:var(--ink);overflow:hidden;background:#201710}
+.room img{display:block;width:100%;height:auto;aspect-ratio:560/378;object-fit:cover;filter:brightness(.82)}
+.room .cap{position:absolute;left:0;right:0;bottom:0;padding:34px 14px 11px;background:linear-gradient(transparent,rgba(16,11,8,.94) 62%)}
+.room .no{font-family:var(--disp);color:var(--brass);font-size:14px;letter-spacing:.2em}
+.room .nm{font-size:20px;font-weight:700;letter-spacing:.08em;line-height:1.3}
+.room .ds{font-size:13px;color:var(--soft);line-height:1.5}
+.room:active img{filter:brightness(1)}
+.tip{text-align:center;font-size:13px;color:var(--soft);margin:22px 0 0}
+footer{margin-top:34px;padding-top:20px;border-top:1px solid #3a2c1c;text-align:center;font-size:12px;color:var(--soft);line-height:1.9}
+footer .to{font-family:var(--disp);font-style:italic;font-size:17px;color:var(--ink);margin-bottom:12px;letter-spacing:.05em}
+@media (prefers-reduced-motion:reduce){.bug{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+ <div class="orn">❦ ❦ ❦</div>
+ <h1>Ladybug <em>Manor</em></h1>
+ <p class="sub">てんとう虫の館</p>
+ <div class="bug" aria-hidden="true"></div>
+</header>
+
+<div class="story">
+ 十七の夏、てんとう虫を追いかけた令嬢は、<br>
+ この館から<b>姿を消した</b>。<br>
+ 各部屋にかくれた3匹のてんとう虫を探しながら、<br>
+ 彼女の足あとをたどろう。
+</div>
+
+<a class="start" href="./hall/">館に入る</a>
+
+<h2>— 館の部屋 —</h2>
+
+<a class="room" href="./hall/">
+ <img src="top_hall.jpg" alt="玄関ホール">
+ <div class="cap"><div class="no">I</div><div class="nm">玄関ホール</div><div class="ds">甲冑と肖像画が見守る、館の入口</div></div>
+</a>
+<a class="room" href="./salon/">
+ <img src="top_salon.jpg" alt="応接室">
+ <div class="cap"><div class="no">II</div><div class="nm">応接室</div><div class="ds">暖炉のそばで、令嬢が微笑んでいる</div></div>
+</a>
+<a class="room" href="./library/">
+ <img src="top_library.jpg" alt="図書室">
+ <div class="cap"><div class="no">III</div><div class="nm">図書室</div><div class="ds">雪の夜、本に囲まれた静かな部屋</div></div>
+</a>
+<a class="room" href="./bedroom/">
+ <img src="top_bedroom.jpg" alt="令嬢の寝室">
+ <div class="cap"><div class="no">IV</div><div class="nm">令嬢の寝室</div><div class="ds">天蓋のベッドと、日付だけの日記</div></div>
+</a>
+<a class="room" href="./study/">
+ <img src="top_cabinet.jpg" alt="書斎">
+ <div class="cap"><div class="no">V</div><div class="nm">書斎</div><div class="ds">館の主が、毎晩灯りを残した部屋</div></div>
+</a>
+
+<p class="tip">ドラッグで見回して、引き出しや本をタップ。<br>どの部屋からでも「🚪 部屋へ」で行き来できるよ。</p>
+
+<footer>
+ <div class="to">— 令嬢の行方は、つづきで —</div>
+ Ladybug Manor © 2026 FILWEN<br>
+ Planning &amp; Creative Direction: FILWEN<br>
+ Developed with Claude (Anthropic)
+</footer>
+</div>
+</body>
+</html>

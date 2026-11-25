@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>書斎 作り込み版</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,500&family=Shippori+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* layout: full-bleed 3D stage, score strip pinned top, one line of help pinned bottom */
+  --night:#17110d;
+  --ink:#f1e4c8;
+  --ink-soft:#bfae8c;
+  --brass:#c9a04a;
+  --lady:#cf2b20;
+  --panel:rgba(23,17,13,.78);
+  --font-display:'Cormorant Garamond','Shippori Mincho',serif;
+  --font-body:'Shippori Mincho','Hiragino Mincho ProN','Yu Mincho',serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--night);color:var(--ink);font-family:var(--font-body);overflow:hidden}
+#stage{position:fixed;inset:0;touch-action:none}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+#hud{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:10px 16px;background:linear-gradient(var(--panel),rgba(23,17,13,0));pointer-events:none}
+#hud h1{margin:0;font-family:var(--font-display);font-weight:500;font-size:22px;letter-spacing:.04em;flex:1;white-space:nowrap}
+#hud h1 em{color:var(--brass)}
+#count{display:flex;gap:7px}
+#count i{width:20px;height:16px;border-radius:50% 50% 46% 46%;border:1.5px solid var(--ink-soft);opacity:.55;transition:all .3s}
+#count i.on{background:radial-gradient(circle at 35% 60%,#1a0b08 0 2px,transparent 3px),radial-gradient(circle at 68% 45%,#1a0b08 0 2px,transparent 3px),var(--lady);border-color:#1a0b08;opacity:1;transform:scale(1.15)}
+#time{font-family:var(--font-display);font-size:20px;font-variant-numeric:tabular-nums;min-width:3ch;text-align:right}
+#help{position:fixed;left:16px;right:16px;bottom:12px;margin:0;text-align:center;font-size:13px;color:var(--ink-soft);pointer-events:none;text-shadow:0 1px 4px #000}
+#toast{position:fixed;left:50%;bottom:52px;transform:translateX(-50%);max-width:calc(100% - 32px);padding:9px 16px;background:var(--panel);border:1px solid rgba(201,160,74,.5);border-radius:3px;font-size:15px;text-align:center;opacity:0;transition:opacity .3s;pointer-events:none}
+#toast.show{opacity:1}
+#win{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(10,7,5,.6)}
+#win[hidden]{display:none}
+#win .card{max-width:340px;width:100%;padding:26px 22px;background:var(--night);border:1px solid var(--brass);outline:1px solid rgba(201,160,74,.35);outline-offset:4px;text-align:center}
+#win h2{margin:0 0 6px;font-size:24px;font-weight:700;text-wrap:balance}
+#win p{margin:0 0 20px;color:var(--ink-soft)}
+#win p b{font-family:var(--font-display);font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums}
+button{font:inherit;font-weight:700;color:var(--night);background:var(--brass);border:0;border-radius:2px;padding:11px 26px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+#fail{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center}
+#fail[hidden]{display:none}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<header id="hud">
+  <h1>Ladybug <em>Manor</em></h1>
+  <div id="count" aria-label="見つけたてんとう虫"><i></i><i></i><i></i></div>
+  <div id="time">0:00</div>
+</header>
+<p id="help">ドラッグで見回す。引き出し・本・小箱・ランプをタップ。</p>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="win" hidden>
+  <div class="card">
+    <h2>ぜんぶ見つけた!</h2>
+    <p>タイム <b id="final">0:00</b></p>
+    <button id="again" type="button">もう一度さがす</button>
+  </div>
+</div>
+<div id="fail" hidden>この端末では3D表示(WebGL)が使えませんでした。別のブラウザで開いてみてください。</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ============================================================
+   絵の差し替え口
+   ここに画像のURL(GitHub Pagesなら 'images/xxx.jpg' のような相対パス、
+   またはdata:URI)を入れると、その場所の絵が差し替わります。
+   空文字 '' のままなら、仮の絵(プログラムで描いた模様)を使います。
+   ============================================================ */
+const ART = {
+  wallpaper:   'wallpaper2.jpg',  // 壁紙(繰り返し模様。正方形がおすすめ)
+  picture:     'picture.jpg',  // 壁の額縁の絵(横長 約13:9)
+  drawerFront: 'drawer.jpg',  // 引き出しの前板(横長 約13:4)
+  bookCover:   'cover.jpg',  // 本の表紙(横長 約4:3)
+  rug:         'rug.jpg',   // 敷物(横長 2:1)
+  floor:       'cab_floor.jpg',  // 床(ヘリンボーン・繰り返し)
+  dado:        'cab_dado.jpg'  // 腰壁(横に繰り返し)
+};
+
+/* ============================================================
+   ゲーム設定
+   ============================================================ */
+const CONFIG = {
+  bugCount: 3,        // てんとう虫の数(最後の1匹は一度逃げる)
+  hintAfterSec: 30,   // 何秒見つからないとヒント(かさかさ揺れ)を出すか
+  bugScale: 1.35      // てんとう虫の大きさ
+};
+
+(function(){
+'use strict';
+if (!window.THREE) { document.getElementById('fail').hidden = false; return; }
+
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+const rand = (a,b) => a + Math.random()*(b-a);
+const shuffle = arr => { for (let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; };
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- renderer / scene / camera ---------- */
+let renderer;
+try { renderer = new THREE.WebGLRenderer({antialias:true}); }
+catch(e){ $('fail').hidden = false; return; }
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x17110d);
+scene.fog = new THREE.Fog(0x17110d, 14, 30);
+const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 60);
+const camTarget = new THREE.Vector3(0, 1.25, 0.3);
+const cam = { yaw:0.28, pitch:0.42, zoom:1, yawT:0.28, pitchT:0.42, zoomT:1, base:8 };
+
+function fit(){
+  const w = stage.clientWidth || window.innerWidth, h = stage.clientHeight || window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+  const v = THREE.MathUtils.degToRad(camera.fov);
+  const hf = 2*Math.atan(Math.tan(v/2)*camera.aspect);
+  cam.base = Math.min(13, Math.max(6.4, 2.35/Math.tan(hf/2)));
+}
+window.addEventListener('resize', fit);
+fit();
+
+/* ---------- textures ---------- */
+function canvasTex(w, h, draw){
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 4;
+  return t;
+}
+function artOr(key, fallback){
+  if (ART[key]) { const t = new THREE.TextureLoader().load(ART[key]); t.anisotropy = 4; return t; }
+  return fallback();
+}
+function drawWood(g, w, h, base, grain){
+  g.fillStyle = base; g.fillRect(0,0,w,h);
+  for (let i=0;i<240;i++){
+    g.strokeStyle = 'rgba('+grain+','+(Math.random()*0.22).toFixed(3)+')';
+    g.lineWidth = Math.random()*2+0.4;
+    const y = Math.random()*h;
+    g.beginPath(); g.moveTo(0,y);
+    g.bezierCurveTo(w*0.3, y+rand(-7,7), w*0.65, y+rand(-7,7), w, y+rand(-4,4));
+    g.stroke();
+  }
+}
+const woodTex  = canvasTex(512,512,(g,w,h)=>drawWood(g,w,h,'#6b3d24','30,12,4'));
+const darkWoodTex = canvasTex(512,512,(g,w,h)=>drawWood(g,w,h,'#3d2114','10,4,2'));
+const floorTex = artOr('floor', ()=>canvasTex(512,512,(g,w,h)=>{
+  drawWood(g,w,h,'#4a2e1d','15,7,3');
+  g.strokeStyle='rgba(8,4,2,.7)'; g.lineWidth=3;
+  for (let x=0;x<=w;x+=128){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); }
+}));
+floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping; floorTex.repeat.set(10,7.3);
+
+const wallTex = artOr('wallpaper', ()=>canvasTex(256,256,(g,w,h)=>{
+  g.fillStyle='#2c4a3d'; g.fillRect(0,0,w,h);
+  const motif=(cx,cy)=>{
+    g.save(); g.translate(cx,cy);
+    g.fillStyle='rgba(214,186,120,.34)';
+    for (let k=0;k<4;k++){ g.rotate(Math.PI/2); g.beginPath(); g.ellipse(0,-30,11,28,0,0,Math.PI*2); g.fill(); }
+    g.fillStyle='rgba(214,186,120,.6)'; g.beginPath(); g.arc(0,0,7,0,Math.PI*2); g.fill();
+    g.restore();
+  };
+  motif(64,64); motif(192,192);
+  g.fillStyle='rgba(214,186,120,.3)';
+  [[192,64],[64,192]].forEach(p=>{ g.beginPath(); g.arc(p[0],p[1],5,0,Math.PI*2); g.fill(); });
+}));
+wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping; wallTex.repeat.set(10,4);
+
+const drawerTex = artOr('drawerFront', ()=>canvasTex(520,160,(g,w,h)=>{
+  drawWood(g,w,h,'#7a4528','40,16,6');
+  g.lineWidth=3; g.strokeStyle='rgba(25,10,4,.75)'; g.strokeRect(16,14,w-32,h-28);
+  g.lineWidth=1.5; g.strokeStyle='rgba(240,200,150,.28)'; g.strokeRect(20,18,w-40,h-36);
+}));
+const pictureTex = artOr('picture', ()=>canvasTex(520,360,(g,w,h)=>{
+  const sky=g.createLinearGradient(0,0,0,h); sky.addColorStop(0,'#e9dfc3'); sky.addColorStop(1,'#b9c39a');
+  g.fillStyle=sky; g.fillRect(0,0,w,h);
+  g.strokeStyle='#4d6a3f'; g.lineWidth=5; g.lineCap='round';
+  [[150,.0],[260,-.12],[370,.1]].forEach(s=>{
+    g.beginPath(); g.moveTo(s[0],h); g.quadraticCurveTo(s[0]+s[1]*300,h*0.55,s[0]+s[1]*500,h*0.22); g.stroke();
+    for (let k=0;k<4;k++){
+      const yy=h-50-k*62, xx=s[0]+s[1]*(h-yy)*1.3;
+      g.fillStyle='#5f8048';
+      g.beginPath(); g.ellipse(xx+(k%2?26:-26),yy,26,11,(k%2?-.5:.5),0,Math.PI*2); g.fill();
+    }
+  });
+  g.fillStyle='#cf2b20'; g.beginPath(); g.ellipse(292,150,13,10,0,0,Math.PI*2); g.fill();
+  g.fillStyle='#1a0b08'; g.beginPath(); g.arc(303,146,5,0,Math.PI*2); g.fill();
+  g.beginPath(); g.arc(288,147,2.5,0,Math.PI*2); g.arc(295,154,2.5,0,Math.PI*2); g.fill();
+}));
+const coverTex = artOr('bookCover', ()=>canvasTex(280,208,(g,w,h)=>{
+  g.fillStyle='#5a1f24'; g.fillRect(0,0,w,h);
+  g.strokeStyle='#c9a04a'; g.lineWidth=3; g.strokeRect(12,12,w-24,h-24);
+  g.lineWidth=1; g.strokeRect(19,19,w-38,h-38);
+  g.fillStyle='#c9a04a'; g.textAlign='center';
+  g.font='italic 30px Georgia,serif'; g.fillText('Coccinella',w/2,h/2+2);
+  g.font='14px Georgia,serif'; g.fillText('· a field note ·',w/2,h/2+32);
+}));
+const letterTex = canvasTex(200,140,(g,w,h)=>{
+  g.fillStyle='#efe4c9'; g.fillRect(0,0,w,h);
+  g.strokeStyle='rgba(60,40,30,.55)'; g.lineWidth=1.5;
+  for (let y=26;y<h-14;y+=16){ g.beginPath(); g.moveTo(16,y); g.lineTo(w-16-rand(0,50),y); g.stroke(); }
+});
+
+/* ---------- materials ---------- */
+const mat = (o) => new THREE.MeshStandardMaterial(Object.assign({roughness:.72, metalness:0}, o));
+const M = {
+  wood: mat({map:woodTex}),
+  darkWood: mat({map:darkWoodTex}),
+  drawerFront: mat({map:drawerTex}),
+  cavity: mat({color:0x070504, roughness:1}),
+  felt: mat({color:0x2b5a48, roughness:1}),
+  inner: mat({color:0x8a5c3a, roughness:.9}),
+  brass: mat({color:0xd3aa52, roughness:.35, metalness:.35}),
+  paper: mat({color:0xefe4c9}),
+  leather: mat({color:0x5a1f24, roughness:.6}),
+  red: mat({color:0xd42a1e, roughness:.3}),
+  black: mat({color:0x140a08, roughness:.4}),
+  white: mat({color:0xffffff, roughness:.5})
+};
+const box = (w,h,d,m) => new THREE.Mesh(new THREE.BoxGeometry(w,h,d), m);
+
+/* ---------- lights ---------- */
+const ambient = new THREE.AmbientLight(0xbfb0a0, 0.36);
+scene.add(ambient);
+const moon = new THREE.DirectionalLight(0xb9c6ea, 0.8);
+moon.position.set(-3.5, 7, 6); moon.target.position.set(0, 1, 0); scene.add(moon); scene.add(moon.target);
+moon.castShadow = true;
+(function(){
+  const sz = window.innerWidth < 700 ? 1024 : 2048, sc = moon.shadow.camera;
+  moon.shadow.mapSize.set(sz, sz);
+  sc.left = -4.5; sc.right = 4.5; sc.top = 5; sc.bottom = -3; sc.near = 1; sc.far = 26;
+  moon.shadow.bias = -0.0004; moon.shadow.normalBias = 0.03; moon.shadow.radius = 3;
+})();
+const lampLight = new THREE.PointLight(0xffc98a, 0, 12, 1.6);
+scene.add(lampLight);
+const fill = new THREE.DirectionalLight(0xffd9a8, 0);
+fill.position.set(2.5, 6, 5); scene.add(fill);
+
+/* ---------- room ---------- */
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(30,12), mat({map:wallTex, roughness:1}));
+wall.position.set(0,6,-0.8); scene.add(wall);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,22), mat({map:floorTex, roughness:.85}));
+floor.rotation.x = -Math.PI/2; floor.position.set(0,0,10.2); scene.add(floor);
+
+
+const picFrame = box(1.62,1.18,0.07,M.brass); picFrame.position.set(0,3.25,-0.74); scene.add(picFrame);
+const picture = new THREE.Mesh(new THREE.PlaneGeometry(1.4,0.97), mat({map:pictureTex, roughness:.9}));
+picture.position.set(0,3.25,-0.70); scene.add(picture);
+
+/* ---------- cabinet ---------- */
+const FRONT_Z = 0.55, TOP_Y = 1.78;
+const body = box(3.0,1.45,1.1,M.darkWood); body.position.set(0,0.975,0); scene.add(body);
+const cavity = new THREE.Mesh(new THREE.PlaneGeometry(2.86,1.38), M.cavity);
+cavity.position.set(0,0.98,FRONT_Z+0.002); scene.add(cavity);
+const top = box(3.2,0.08,1.24,M.wood); top.position.set(0,1.74,0.02); scene.add(top);
+[[-1.38,0.44],[1.38,0.44],[-1.38,-0.44],[1.38,-0.44]].forEach(p=>{
+  const foot = new THREE.Mesh(new THREE.SphereGeometry(0.1,16,12), M.darkWood); foot.scale.y = 0.8; foot.position.set(p[0],0.08,p[1]); scene.add(foot);
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.12,16), M.darkWood); neck.position.set(p[0],0.19,p[1]); scene.add(neck);
+});
+
+/* ---------- containers (things that open) ---------- */
+const containers = [];
+function addContainer(group, slot, range, apply, name){
+  const c = { group, slot, range, apply, name, t:0, target:0, shake:0, baseX:group.position.x, bug:null, kind:null, everOpened:false };
+  group.add(slot);
+  group.traverse(o => { o.userData.tap = () => toggle(c); });
+  scene.add(group);
+  containers.push(c);
+  return c;
+}
+
+// six drawers
+const DW=1.36, DH=0.42, DD=0.95;
+[1.44,0.98,0.52].forEach((y,row)=>{
+  [-0.71,0.71].forEach((x,col)=>{
+    const g = new THREE.Group(); g.position.set(x,y,FRONT_Z);
+    const front = box(DW,DH,0.05,M.drawerFront); front.position.z = 0.025; g.add(front);
+    const bottom = box(DW-0.08,0.02,DD,M.felt); bottom.position.set(0,-DH/2+0.03,-DD/2); g.add(bottom);
+    [-1,1].forEach(s=>{ const side = box(0.03,0.24,DD,M.inner); side.position.set(s*(DW/2-0.055),-DH/2+0.15,-DD/2); g.add(side); });
+    const back = box(DW-0.08,0.24,0.03,M.inner); back.position.set(0,-DH/2+0.15,-DD+0.015); g.add(back);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.05,16,12), M.brass); knob.position.z = 0.09; g.add(knob);
+    const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.075,0.012,24), M.brass); rose.rotation.x = Math.PI/2; rose.position.z = 0.054; g.add(rose);
+    const key = box(0.045,0.075,0.008,M.brass); key.position.set(0,0.13,0.053); g.add(key);
+    const hole = box(0.012,0.03,0.004,M.black); hole.position.set(0,0.125,0.058); g.add(hole);
+    [[DW-0.06,0.012,0,DH/2-0.03],[DW-0.06,0.012,0,-DH/2+0.03]].forEach(q=>{ const e = box(q[0],q[1],0.008,M.brass); e.position.set(q[2],q[3],0.052); g.add(e); });
+    [-1,1].forEach(sd=>{ const e = box(0.012,DH-0.06,0.008,M.brass); e.position.set(sd*(DW/2-0.03),0,0.052); g.add(e); });
+    [[DW-0.12,0.006,0,DH/2-0.05],[DW-0.12,0.006,0,-DH/2+0.05]].forEach(q=>{ const e = box(q[0],q[1],0.006,M.brass); e.position.set(q[2],q[3],0.052); g.add(e); });
+    [-1,1].forEach(sd=>{ [-1,1].forEach(sv=>{ const c = new THREE.Mesh(new THREE.SphereGeometry(0.014,8,6), M.brass); c.scale.z = 0.5; c.position.set(sd*(DW/2-0.03),sv*(DH/2-0.03),0.054); g.add(c); }); });
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.088,0.009,6,24), M.brass); ring.position.z = 0.056; g.add(ring);
+    for (let k=0;k<10;k++){ const a2 = k/10*Math.PI*2; const bd = new THREE.Mesh(new THREE.SphereGeometry(0.008,6,5), M.brass); bd.position.set(Math.cos(a2)*0.108,Math.sin(a2)*0.108,0.055); g.add(bd); }
+    const slot = new THREE.Group(); slot.position.set(0,-DH/2+0.045,0);
+    addContainer(g, slot, {x:DW/2-0.24, z0:-0.66, z1:-0.18}, (c,t)=>{ c.group.position.z = FRONT_Z + 0.8*t; }, 'drawer');
+  });
+});
+
+// book
+(function(){
+  const g = new THREE.Group(); g.position.set(-0.9,TOP_Y,0.12); g.rotation.y = 0.22;
+  const backCover = box(0.7,0.012,0.52,M.leather); backCover.position.y = 0.006; g.add(backCover);
+  const pages = box(0.66,0.07,0.48,M.paper); pages.position.y = 0.047; g.add(pages);
+  const spine = box(0.02,0.094,0.52,M.leather); spine.position.set(-0.352,0.047,0); g.add(spine);
+  const pivot = new THREE.Group(); pivot.position.set(-0.35,0.086,0); g.add(pivot);
+  const coverTop = mat({map:coverTex, roughness:.6});
+  const cover = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.014,0.52), [M.leather,M.leather,coverTop,M.paper,M.leather,M.leather]);
+  cover.position.set(0.35,0.007,0); pivot.add(cover);
+  const slot = new THREE.Group(); slot.position.set(0,0.083,0);
+  addContainer(g, slot, {x:0.2, z0:-0.13, z1:0.13}, (c,t)=>{ pivot.rotation.z = 2.5*t; }, 'book');
+})();
+
+// small box
+(function(){
+  const w=0.46,h=0.14,d=0.34;
+  const g = new THREE.Group(); g.position.set(0.3,TOP_Y,0.2); g.rotation.y = -0.3;
+  const bottom = box(w,0.02,d,M.felt); bottom.position.y = 0.01; g.add(bottom);
+  [-1,1].forEach(s=>{
+    const a = box(0.02,h,d,M.wood); a.position.set(s*(w/2-0.01),h/2,0); g.add(a);
+    const b = box(w,h,0.02,M.wood); b.position.set(0,h/2,s*(d/2-0.01)); g.add(b);
+  });
+  const latch = box(0.05,0.05,0.015,M.brass); latch.position.set(0,h-0.03,d/2+0.006); g.add(latch);
+  const pivot = new THREE.Group(); pivot.position.set(0,h,-d/2); g.add(pivot);
+  const lid = box(w+0.02,0.025,d+0.02,M.wood); lid.position.set(0,0.0125,d/2); pivot.add(lid);
+  const slot = new THREE.Group(); slot.position.set(0,0.025,0);
+  addContainer(g, slot, {x:0.12, z0:-0.07, z1:0.07}, (c,t)=>{ pivot.rotation.x = -1.9*t; }, 'box');
+})();
+
+// lamp
+let lampOn = false;
+const shadeMat = mat({color:0x7d2f2a, emissive:0xffb060, emissiveIntensity:0, side:THREE.DoubleSide, roughness:.9});
+(function(){
+  const g = new THREE.Group(); g.position.set(1.2,TOP_Y,-0.15);
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.15,0.05,24), M.brass); base.position.y = 0.025; g.add(base);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.5,12), M.brass); stem.position.y = 0.3; g.add(stem);
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.26,0.28,28,1,true), shadeMat); shade.position.y = 0.6; g.add(shade);
+  g.traverse(o => { o.userData.tap = toggleLamp; });
+  scene.add(g);
+  lampLight.position.set(1.2, TOP_Y+0.75, 0.25);
+})();
+function toggleLamp(){
+  lampOn = !lampOn;
+  blip(lampOn ? 660 : 330, 0.05);
+  if (lampOn){ lampEpi = (lampEpi+1) % LAMP_EPISODE.length; toast(LAMP_EPISODE[lampEpi]); } else toast('ランプを消した');
+}
+
+/* =====================================================================
+   作り込み: モールディング、敷物、壁の飾り、小物、光のにじみ、ほこり
+   ===================================================================== */
+const extras = [];   // 毎フレーム呼ぶ演出 (clock, lampLevel, dt)
+(function(){
+  const noTap = o => { o.raycast = () => {}; return o; };
+  const deco = (g, msg) => { g.traverse(o => { o.userData.tap = () => toast(msg); }); scene.add(g); return g; };
+
+  // キャビネットの縁取り
+  [[3.1,0.05,1.17,1.685,0.02],[3.06,0.06,1.14,0.28,0]].forEach(d=>{ const m = box(d[0],d[1],d[2],M.wood); m.position.set(0,d[3],d[4]); scene.add(m); });
+  [-1.46,1.46].forEach(x=>{ const m = box(0.08,1.45,0.03,M.wood); m.position.set(x,0.975,0.565); scene.add(m); });
+  const stile = box(0.05,1.4,0.02,M.wood); stile.position.set(0,0.98,0.556); scene.add(stile);
+
+  // ---- キャビネット本体の作り込み ----
+  const dec = m => { m.traverse(o=>{ o.raycast = () => {}; }); scene.add(m); return m; };
+  const dkM = M.darkWood;
+  // 天板: 緑の革のはめ込みと金の縁
+  { const inl = box(2.96,0.006,1.06,mat({color:0x1f3d33, roughness:.55})); inl.position.set(0,1.782,0.02); dec(inl);
+    [[2.98,0.012,0.012,0,0.02-0.535],[2.98,0.012,0.012,0,0.02+0.535]].forEach(q=>{ const e = box(q[0],0.004,q[2],M.brass); e.position.set(q[3],1.784,q[4]); dec(e); });
+    [-1,1].forEach(sd=>{ const e = box(0.012,0.004,1.07,M.brass); e.position.set(sd*1.49,1.784,0.02); dec(e); }); }
+  // 天板の下: 歯形飾り (デンティル) と上の面取り
+  { const dt = new THREE.Group();
+    for (let k=0;k<30;k++){ const t = box(0.06,0.04,0.035,M.brass); t.position.set(-1.45+k*0.1,1.685,0.585); dt.add(t); }
+    [-1,1].forEach(sd=>{ for (let k=0;k<9;k++){ const t = box(0.035,0.04,0.06,M.brass); t.position.set(sd*1.565,1.685,-0.5+k*0.125); dt.add(t); } });
+    dec(dt);
+    // 天板の縁の盛り上がり (額縁状)
+    [[3.26,0.05,0.04,0,0.02-0.63],[3.26,0.05,0.04,0,0.02+0.63]].forEach(q=>{ const e = box(q[0],q[1],q[2],dkM); e.position.set(q[3],1.805,q[4]); dec(e); const g2 = box(q[0],0.008,q[2]*0.4,M.brass); g2.position.set(q[3],1.832,q[4]); dec(g2); });
+    [-1,1].forEach(sd=>{ const e = box(0.04,0.05,1.22,dkM); e.position.set(sd*1.61,1.805,0.02); dec(e); const g2 = box(0.016,0.008,1.22,M.brass); g2.position.set(sd*1.61,1.832,0.02); dec(g2); }); }
+  // 四隅の溝つき柱 (フルート) と金の柱頭・柱脚
+  [-1,1].forEach(sd=>{
+    const geo = new THREE.CylinderGeometry(0.065,0.065,1.36,24,1), pos = geo.attributes.position;
+    for (let i=0;i<pos.count;i++){ const x=pos.getX(i), z=pos.getZ(i), r=Math.hypot(x,z), th=Math.atan2(z,x); if (r>0.01){ const k=r*(1-0.1*(0.5+0.5*Math.cos(8*th)))/r; pos.setX(i,x*k); pos.setZ(i,z*k); } }
+    geo.computeVertexNormals();
+    const col = new THREE.Mesh(geo, dkM); col.position.set(sd*1.5,0.98,0.6); dec(col);
+    const cap = box(0.15,0.06,0.15,M.brass); cap.position.set(sd*1.5,1.69,0.6); dec(cap);
+    const cap2 = new THREE.Mesh(new THREE.SphereGeometry(0.075,12,8), M.brass); cap2.scale.y = 0.55; cap2.position.set(sd*1.5,1.65,0.6); dec(cap2);
+    const bas = box(0.15,0.06,0.15,M.brass); bas.position.set(sd*1.5,0.31,0.6); dec(bas);
+    const bt = new THREE.Mesh(new THREE.TorusGeometry(0.07,0.015,6,16), M.brass); bt.rotation.x = Math.PI/2; bt.position.set(sd*1.5,0.36,0.6); dec(bt);
+  });
+  // 脚の金の輪と下のエプロン (波形)
+  [[-1.38,0.44],[1.38,0.44],[-1.38,-0.44],[1.38,-0.44]].forEach(p=>{ const rg = new THREE.Mesh(new THREE.TorusGeometry(0.082,0.012,6,18), M.brass); rg.rotation.x = Math.PI/2; rg.position.set(p[0],0.14,p[1]); dec(rg); });
+  const mkApron = len => { const n = Math.round(len/0.2), sh = new THREE.Shape(); const w = len/2;
+    sh.moveTo(-w,0.1); sh.lineTo(w,0.1); sh.lineTo(w,0.02); for (let i=n-1;i>=0;i--){ const x1 = -w+i*len/n, x2 = x1+len/n; sh.quadraticCurveTo((x1+x2)/2,-0.05,x1,0.02); } sh.lineTo(-w,0.1);
+    return new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:0.035,bevelEnabled:false}), dkM); };
+  { const af = mkApron(2.5); af.position.set(0,0.2,0.545); dec(af);
+    [-1,1].forEach(sd=>{ const as = mkApron(0.8); as.rotation.y = Math.PI/2; as.position.set(sd*1.5-(sd>0?0:0.035),0.2,0); dec(as); });
+    const med = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,8), M.brass); med.scale.set(1.3,1,0.4); med.position.set(0,0.22,0.6); dec(med);
+    [-1,1].forEach(sd=>{ const sc = new THREE.Mesh(new THREE.TorusGeometry(0.04,0.008,6,14,Math.PI*1.4), M.brass); sc.position.set(sd*0.1,0.22,0.595); sc.rotation.z = sd>0?-Math.PI*0.2:Math.PI*0.7; dec(sc); }); }
+  // 側面のパネル枠 (金線)
+  [-1,1].forEach(sd=>{ const x = sd*1.506;
+    [[0.012,0.012,0.84,0,1.56],[0.012,0.012,0.84,0,0.4]].forEach(q=>{ const e = box(0.006,q[1],q[2],M.brass); e.position.set(x,q[4],0); dec(e); });
+    [-0.42,0.42].forEach(z=>{ const e = box(0.006,1.16,0.012,M.brass); e.position.set(x,0.98,z); dec(e); });
+    const ro = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,8), M.brass); ro.scale.set(0.3,1,1); ro.position.set(x,0.98,0); dec(ro); });
+
+  // 腰壁と敷物
+  { const DH=1.12, tile=DH*1024/1271;
+    const dTex = artOr('dado', ()=>canvasTex(256,256,(g,w,h)=>drawWood(g,w,h,'#3d2114','10,4,2')));
+    dTex.wrapS = THREE.RepeatWrapping; dTex.repeat.set(30/tile,1);
+    const dm = new THREE.Mesh(new THREE.PlaneGeometry(30,DH), mat({map:dTex, roughness:.75}));
+    dm.position.set(0,DH/2,-0.77); dm.userData.noCast = true; scene.add(dm); }
+  const rugTex = artOr('rug', ()=>canvasTex(640,320,(g,w,h)=>{
+    g.fillStyle='#6e1f2a'; g.fillRect(0,0,w,h);
+    g.strokeStyle='#c9a04a'; g.lineWidth=6; g.strokeRect(14,14,w-28,h-28);
+    g.fillStyle='#1f3b4a'; g.fillRect(30,30,w-60,h-60);
+    g.strokeStyle='#e3d2ac'; g.lineWidth=3; g.strokeRect(42,42,w-84,h-84);
+    g.fillStyle='#6e1f2a'; g.beginPath(); g.ellipse(w/2,h/2,150,84,0,0,6.3); g.fill();
+    g.fillStyle='#c9a04a'; g.beginPath(); g.ellipse(w/2,h/2,96,50,0,0,6.3); g.fill();
+    g.fillStyle='#1f3b4a'; g.beginPath(); g.ellipse(w/2,h/2,56,28,0,0,6.3); g.fill();
+  }));
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(4.6,2.3), mat({map:rugTex, roughness:1}));
+  rug.rotation.x = -Math.PI/2; rug.position.set(0,0.006,1.15); scene.add(rug);
+
+  // 振り子時計
+  (function(){
+    const g = new THREE.Group(); g.position.set(1.45,2.95,-0.74);
+    const body = box(0.36,0.62,0.1,M.darkWood); g.add(body);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(0.27,0.14,4), M.wood); roof.rotation.y = Math.PI/4; roof.scale.z = 0.35; roof.position.y = 0.38; g.add(roof);
+    const face = new THREE.Mesh(new THREE.CircleGeometry(0.13,28), M.paper); face.position.set(0,0.13,0.052); g.add(face);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.135,0.012,8,32), M.brass); ring.position.set(0,0.13,0.055); g.add(ring);
+    const h1 = box(0.012,0.09,0.004,M.black); h1.position.set(0,0.17,0.058); g.add(h1);
+    const h2 = box(0.07,0.012,0.004,M.black); h2.position.set(0.03,0.13,0.058); g.add(h2);
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.2,0.22), M.cavity); win.position.set(0,-0.17,0.052); g.add(win);
+    const pivot = new THREE.Group(); pivot.position.set(0,-0.04,0.062); g.add(pivot);
+    const rod = box(0.012,0.2,0.008,M.brass); rod.position.y = -0.1; pivot.add(rod);
+    const bob = new THREE.Mesh(new THREE.CircleGeometry(0.045,20), M.brass); bob.position.set(0,-0.2,0.004); pivot.add(bob);
+    for (let k=0;k<12;k++){ const an=k/12*Math.PI*2; const tk = new THREE.Mesh(new THREE.SphereGeometry(k%3===0?0.011:0.006,6,5), M.brass); tk.position.set(Math.sin(an)*0.105,0.13+Math.cos(an)*0.105,0.058); g.add(tk); }
+    const fin = new THREE.Mesh(new THREE.SphereGeometry(0.028,10,8), M.brass); fin.position.y = 0.47; g.add(fin);
+    const fin2 = new THREE.Mesh(new THREE.ConeGeometry(0.012,0.05,8), M.brass); fin2.position.y = 0.5; g.add(fin2);
+    [-1,1].forEach(sd=>{ const fs = new THREE.Mesh(new THREE.SphereGeometry(0.018,8,6), M.brass); fs.position.set(sd*0.15,0.36,0.01); g.add(fs);
+      const pc = new THREE.Mesh(new THREE.CylinderGeometry(0.016,0.016,0.5,10), M.brass); pc.position.set(sd*0.175,0.0,0.052); g.add(pc); });
+    const crown = box(0.42,0.03,0.14,M.brass); crown.position.y = 0.32; g.add(crown);
+    const base = box(0.42,0.045,0.14,M.brass); base.position.y = -0.335; g.add(base);
+    const apr = new THREE.Mesh(new THREE.SphereGeometry(0.06,10,8), M.brass); apr.scale.set(1.4,0.7,0.4); apr.position.set(0,-0.385,0.04); g.add(apr);
+    [[0.22,0.012,0,0.11],[0.22,0.012,0,-0.11]].forEach(q=>{ const e = box(q[0],q[1],0.006,M.brass); e.position.set(q[2],-0.17+q[3],0.056); g.add(e); });
+    [-1,1].forEach(sd=>{ const e = box(0.012,0.22,0.006,M.brass); e.position.set(sd*0.11,-0.17,0.056); g.add(e); });
+    deco(g, '振り子時計がカチコチ。この時計だけは、主が毎朝ねじを巻いた。娘が帰る時間に、遅れないように');
+    if (!reduceMotion) extras.push(t => { pivot.rotation.z = Math.sin(t*3.1)*0.3; });
+  })();
+
+  // 小さな楕円の額
+  [[-1.45,3.05,'#7d95a8','#f1dcc8'],[-1.45,2.4,'#8a6f8f','#f3e7b0']].forEach(d=>{
+    const g = new THREE.Group(); g.position.set(d[0],d[1],-0.75);
+    const tex = canvasTex(128,160,(c,w,h)=>{
+      c.fillStyle=d[2]; c.fillRect(0,0,w,h);
+      c.strokeStyle='#3d5a36'; c.lineWidth=4; c.beginPath(); c.moveTo(w/2,h); c.quadraticCurveTo(w/2-10,h*0.6,w/2,h*0.42); c.stroke();
+      c.fillStyle=d[3]; for (let k=0;k<6;k++){ const a=k*Math.PI/3; c.beginPath(); c.ellipse(w/2+Math.cos(a)*15,h*0.36+Math.sin(a)*15,11,7,a,0,6.3); c.fill(); }
+      c.fillStyle='#c9a04a'; c.beginPath(); c.arc(w/2,h*0.36,7,0,6.3); c.fill();
+    });
+    const fr = new THREE.Mesh(new THREE.CircleGeometry(0.2,36), M.brass); fr.scale.set(1,1.25,1); g.add(fr);
+    const pic = new THREE.Mesh(new THREE.CircleGeometry(0.165,36), mat({map:tex, roughness:.9})); pic.scale.set(1,1.25,1); pic.position.z = 0.01; g.add(pic);
+    const orn = new THREE.Mesh(new THREE.TorusGeometry(0.205,0.02,8,40), M.darkWood); orn.scale.set(1,1.25,1); orn.position.z = 0.008; g.add(orn);
+    for (let k=0;k<24;k++){ const an=k/24*Math.PI*2; const bd = new THREE.Mesh(new THREE.SphereGeometry(0.009,6,5), M.brass); bd.position.set(Math.cos(an)*0.232,Math.sin(an)*0.29,0.02); g.add(bd); }
+    [-1,1].forEach(sd=>{ const lp = new THREE.Mesh(new THREE.TorusGeometry(0.035,0.008,6,14,Math.PI*1.6), M.brass); lp.position.set(sd*0.04,0.275,0.018); lp.rotation.z = sd>0?-0.4:Math.PI+0.4; g.add(lp); });
+    const kn = new THREE.Mesh(new THREE.SphereGeometry(0.02,8,6), M.brass); kn.position.set(0,0.27,0.026); g.add(kn);
+    [-1,1].forEach(sd=>{ const tl = new THREE.Mesh(new THREE.ConeGeometry(0.014,0.07,6), M.brass); tl.position.set(sd*0.025,0.225,0.022); tl.rotation.z = sd*0.3; g.add(tl); });
+    deco(g, '小さな花の絵。てんとう虫はいない');
+  });
+
+  // 風景画の額縁の作り込み
+  (function(){
+    const g = new THREE.Group(); g.position.set(0,3.25,-0.74);
+    const W=1.62,H=1.18;
+    const st=(w,h,d,x,y,z,m)=>{ const b=box(w,h,d,m); b.position.set(x,y,z); g.add(b); };
+    // 外側の濃い木の縁
+    st(W+0.08,0.06,0.09,0,H/2+0.02,0.01,M.darkWood); st(W+0.08,0.06,0.09,0,-H/2-0.02,0.01,M.darkWood);
+    st(0.06,H,0.09,-W/2-0.02,0,0.01,M.darkWood); st(0.06,H,0.09,W/2+0.02,0,0.01,M.darkWood);
+    // 金の外縁と内縁
+    st(W+0.1,0.012,0.1,0,H/2+0.052,0.01,M.brass); st(W+0.1,0.012,0.1,0,-H/2-0.052,0.01,M.brass);
+    st(0.012,H+0.1,0.1,-W/2-0.052,0,0.01,M.brass); st(0.012,H+0.1,0.1,W/2+0.052,0,0.01,M.brass);
+    st(1.44,0.03,0.02,0,0.5,0.052,M.brass); st(1.44,0.03,0.02,0,-0.5,0.052,M.brass);
+    st(0.03,1.0,0.02,-0.71,0,0.052,M.brass); st(0.03,1.0,0.02,0.71,0,0.052,M.brass);
+    // 玉縁の列
+    for (let k=-12;k<=12;k++){ [1,-1].forEach(sd=>{ const b2 = new THREE.Mesh(new THREE.SphereGeometry(0.014,6,5), M.brass); b2.position.set(k*0.062,sd*(H/2+0.0),0.06); g.add(b2); }); }
+    for (let k=-8;k<=8;k++){ [1,-1].forEach(sd=>{ const b2 = new THREE.Mesh(new THREE.SphereGeometry(0.014,6,5), M.brass); b2.position.set(sd*(W/2),k*0.062,0.06); g.add(b2); }); }
+    // 四隅のバラ
+    [[-1,1],[1,1],[-1,-1],[1,-1]].forEach(q=>{ const x=q[0]*(W/2+0.02), y=q[1]*(H/2+0.02);
+      for (let k=0;k<3;k++){ const t = new THREE.Mesh(new THREE.TorusGeometry(0.05-k*0.014,0.014,6,16), M.brass); t.position.set(x,y,0.06+k*0.01); g.add(t); }
+      const c0 = new THREE.Mesh(new THREE.SphereGeometry(0.016,8,6), M.brass); c0.position.set(x,y,0.09); g.add(c0); });
+    // 上の飾り (貝とスクロール)
+    const shp = new THREE.Shape(); shp.moveTo(-0.16,0); for (let i=0;i<7;i++){ const a2=-0.16+i*0.0457; shp.quadraticCurveTo(a2+0.0228,0.11+(i===3?0.04:0),a2+0.0457,0); } shp.lineTo(-0.16,0);
+    const sh = new THREE.Mesh(new THREE.ExtrudeGeometry(shp,{depth:0.025,bevelEnabled:false}), M.brass); sh.position.set(0,H/2+0.055,0.03); g.add(sh);
+    { const scG = new THREE.Group(); scG.position.set(0.24,H/2+0.1,0.05); const sc = new THREE.Mesh(new THREE.TorusGeometry(0.075,0.014,6,18,Math.PI*1.5), M.brass); sc.rotation.z = -Math.PI*0.25; scG.add(sc); g.add(scG);
+      const scL = scG.clone(); scL.scale.x = -1; scL.position.x = -0.24; g.add(scL); }
+    // 下の銘板
+    st(0.34,0.06,0.02,0,-H/2-0.02,0.07,M.brass);
+    g.traverse(o=>{ o.userData.tap = () => toast('夕暮れの小道の絵。道のさきに、赤い点が見える気がする'); });
+    scene.add(g);
+  })();
+
+  // 花びん
+  (function(){
+    const g = new THREE.Group(); g.position.set(-0.2,TOP_Y,-0.32);
+    const pts = [[0.001,0],[0.07,0],[0.1,0.06],[0.11,0.14],[0.08,0.24],[0.04,0.3],[0.045,0.36],[0.06,0.38]].map(p=>new THREE.Vector2(p[0],p[1]));
+    const vase = new THREE.Mesh(new THREE.LatheGeometry(pts,28), mat({color:0x9db8c9, roughness:.25, side:THREE.DoubleSide})); g.add(vase);
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.108,0.008,8,28), M.brass); band.rotation.x = Math.PI/2; band.position.y = 0.14; g.add(band);
+    const stemMat = mat({color:0x3d6a3a, roughness:.9});
+    [[-0.5,0.2,0xe7b9c3],[0.45,-0.15,0xf3e7d0],[0.1,0.5,0xd98fa0],[-0.2,-0.45,0xf3e7d0],[0.0,0.0,0xe7b9c3]].forEach((d,i)=>{
+      const s = new THREE.Group(); s.position.y = 0.34; s.rotation.z = d[0]; s.rotation.x = d[1];
+      const len = 0.3 + (i%3)*0.05;
+      const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.006,0.006,len,6), stemMat); stem.position.y = len/2; s.add(stem);
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,10), mat({color:d[2], roughness:.9})); fl.scale.y = 0.75; fl.position.y = len; s.add(fl);
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.02,8,6), M.brass); core.position.y = len+0.03; s.add(core);
+      const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.035,8,6), stemMat); leaf.scale.set(1.6,0.25,0.7); leaf.position.set(0.04,len*0.5,0); s.add(leaf);
+      g.add(s);
+    });
+    deco(g, '花びん。花のうらにも、てんとう虫はいない');
+  })();
+
+  // ティーカップ
+  (function(){
+    const g = new THREE.Group(); g.position.set(0.8,TOP_Y,0.3); g.scale.setScalar(2.0);
+    const china = mat({color:0xf3efe6, roughness:.25, side:THREE.DoubleSide});
+    const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.06,0.012,28), china); saucer.position.y = 0.006; g.add(saucer);
+    const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.032,0.055,24,1,true), china); cup.position.y = 0.04; g.add(cup);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.032,0.032,0.006,20), china); base.position.y = 0.014; g.add(base);
+    const tea = new THREE.Mesh(new THREE.CircleGeometry(0.046,24), mat({color:0x8a4a1c, roughness:.2})); tea.rotation.x = -Math.PI/2; tea.position.y = 0.058; g.add(tea);
+    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.02,0.005,8,16), china); handle.position.set(0.062,0.04,0); g.add(handle);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.05,0.003,6,28), M.brass); rim.rotation.x = Math.PI/2; rim.position.y = 0.067; g.add(rim);
+    deco(g, '飲みかけの紅茶。まだ温かい');
+  })();
+
+  // リボンで束ねた手紙
+  (function(){
+    const g = new THREE.Group(); g.position.set(-0.3,TOP_Y,0.34); g.rotation.y = -0.3; g.scale.setScalar(1.8);
+    [0,0.07,-0.05].forEach((r,i)=>{ const p = box(0.22,0.006,0.15,M.paper); p.position.y = 0.004+i*0.007; p.rotation.y = r; g.add(p); });
+    const rb = box(0.02,0.026,0.16,M.red); rb.position.y = 0.012; g.add(rb);
+    const rb2 = box(0.23,0.026,0.02,M.red); rb2.position.y = 0.012; g.add(rb2);
+    deco(g, 'リボンで束ねた手紙。だれ宛てだろう');
+  })();
+
+  // ランプの光のにじみ
+  const glowTex = canvasTex(128,128,(c,w,h)=>{
+    const gr = c.createRadialGradient(w/2,h/2,0,w/2,h/2,w/2);
+    gr.addColorStop(0,'rgba(255,214,150,.9)'); gr.addColorStop(0.35,'rgba(255,180,100,.35)'); gr.addColorStop(1,'rgba(255,160,80,0)');
+    c.fillStyle=gr; c.fillRect(0,0,w,h);
+  });
+  const glow = noTap(new THREE.Sprite(new THREE.SpriteMaterial({map:glowTex, blending:THREE.AdditiveBlending, depthWrite:false, transparent:true, opacity:0})));
+  glow.position.set(1.2,TOP_Y+0.58,-0.1); glow.scale.set(1.9,1.9,1); scene.add(glow);
+  extras.push((t,lv) => { glow.material.opacity = 0.6*lv*(1 + 0.06*Math.sin(t*13) + 0.04*Math.sin(t*29.7)); });
+
+  // 光の中をただようほこり
+  const N = 70, pos = new Float32Array(N*3), seed = [];
+  for (let i=0;i<N;i++){ pos[i*3]=rand(-2.2,2.2); pos[i*3+1]=rand(0.4,3.6); pos[i*3+2]=rand(-0.4,2.2); seed.push(rand(0,6.28)); }
+  const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const dust = noTap(new THREE.Points(dg, new THREE.PointsMaterial({color:0xffe6c0, size:0.022, transparent:true, opacity:0.18, depthWrite:false})));
+  scene.add(dust);
+  extras.push((t,lv,dt) => {
+    dust.material.opacity = 0.14 + 0.3*lv;
+    if (reduceMotion) return;
+    for (let i=0;i<N;i++){
+      pos[i*3+1] += dt*0.035; pos[i*3] += Math.sin(t*0.5+seed[i])*dt*0.03;
+      if (pos[i*3+1] > 3.6) pos[i*3+1] = 0.4;
+    }
+    dg.attributes.position.needsUpdate = true;
+  });
+})();
+
+/* ---------- ladybug ---------- */
+function makeBug(){
+  const bug = new THREE.Group();
+  const shell = new THREE.Group(); shell.scale.set(1,0.75,1.2); bug.add(shell);
+  const R = 0.07;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(R,24,12,0,Math.PI*2,0,Math.PI/2), M.red); shell.add(dome);
+  [[0.9,0.5],[2.25,0.5],[0.5,1.05],[2.65,1.05],[1.2,1.2],[1.95,1.2],[4.7,0.75]].forEach(a=>{
+    const th=a[0], ph=a[1];
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.014,10,8), M.black);
+    s.position.set(R*Math.sin(ph)*Math.cos(th), R*Math.cos(ph), -R*Math.sin(ph)*Math.sin(th)*0.9);
+    s.scale.set(1,0.4,1); shell.add(s);
+  });
+  const seam = box(0.004,0.004,R*1.9,M.black); seam.position.set(0,R*0.99,-0.01); seam.visible = false; shell.add(seam);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.034,14,10), M.black); head.position.set(0,0.02,0.078); bug.add(head);
+  [-1,1].forEach(s=>{ const e = new THREE.Mesh(new THREE.SphereGeometry(0.009,8,6), M.white); e.position.set(s*0.018,0.034,0.1); bug.add(e); });
+  const hit = new THREE.Mesh(new THREE.SphereGeometry(0.13,10,8), new THREE.MeshBasicMaterial({transparent:true, opacity:0, depthWrite:false}));
+  hit.position.y = 0.03; bug.add(hit);
+  bug.scale.setScalar(CONFIG.bugScale);
+  bug.userData.phase = rand(0,6.28);
+  bug.userData.base = new THREE.Vector3();
+  bug.traverse(o => { o.userData.tap = () => tapBug(bug); });
+  return bug;
+}
+
+/* ---------- trinkets ---------- */
+const TRINKET_TEXT = {
+  key:'古い鍵。何を開ける鍵だろう',
+  letter:'読みかけの手紙。てんとう虫はいない',
+  coins:'銅貨が3枚。ここじゃなかった',
+  marble:'ガラス玉がころん'
+};
+function makeTrinket(kind){
+  const g = new THREE.Group();
+  if (kind==='key'){
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035,0.01,8,20), M.brass); ring.rotation.x = Math.PI/2; ring.position.y = 0.01; g.add(ring);
+    const shaft = box(0.014,0.014,0.12,M.brass); shaft.position.set(0,0.01,0.095); g.add(shaft);
+    const tooth = box(0.035,0.014,0.02,M.brass); tooth.position.set(0.02,0.01,0.14); g.add(tooth);
+  } else if (kind==='letter'){
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.004,0.155), [M.paper,M.paper,mat({map:letterTex}),M.paper,M.paper,M.paper]);
+    p.position.y = 0.004; g.add(p);
+  } else if (kind==='coins'){
+    const copper = mat({color:0xb06a3a, roughness:.4, metalness:.3});
+    [[0,0],[0.06,0.03],[-0.02,0.07]].forEach((p,i)=>{
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.008,20), copper); c.position.set(p[0],0.005+i*0.001,p[1]); g.add(c);
+    });
+  } else if (kind==='marble'){
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.036,18,14), mat({color:0x3f9ab0, roughness:.1, metalness:.1})); m.position.y = 0.036; g.add(m);
+  }
+  g.rotation.y = rand(0,6.28);
+  g.traverse(o => { o.userData.tap = () => toast(TRINKET_TEXT[kind]); });
+  return g;
+}
+function flyMoth(c){
+  const start = new THREE.Vector3(); c.slot.getWorldPosition(start);
+  const moth = new THREE.Group();
+  const wingMat = new THREE.MeshBasicMaterial({color:0xc8b58c, side:THREE.DoubleSide});
+  const wings = [-1,1].map(s=>{
+    const p = new THREE.Group();
+    const w = new THREE.Mesh(new THREE.PlaneGeometry(0.09,0.07), wingMat); w.rotation.x = -Math.PI/2; w.position.x = s*0.045; p.add(w);
+    moth.add(p); return {p, s};
+  });
+  moth.position.copy(start); scene.add(moth);
+  const sway = rand(0,6.28), dir = Math.random()<0.5?-1:1;
+  tween(2.6, k=>{
+    moth.position.set(start.x + Math.sin(k*9+sway)*0.25 + dir*k*1.2, start.y + k*2.6, start.z + k*0.8);
+    wings.forEach(w=>{ w.p.rotation.z = w.s*Math.sin(k*70)*0.9; });
+  }, ()=>scene.remove(moth));
+  toast('蛾がひらり。ここじゃなかった');
+}
+
+/* ---------- tiny tween list ---------- */
+const tweens = [];
+function tween(dur, fn, done){ tweens.push({t:0, dur, fn, done}); }
+
+/* ---------- game state ---------- */
+let bugs = [], found = 0, won = false, startTime = 0, lastFind = 0, lastHint = 0, clock = 0;
+
+function placeIn(obj, c){
+  obj.position.set(rand(-c.range.x,c.range.x), 0, rand(c.range.z0,c.range.z1));
+  c.slot.add(obj);
+}
+function setup(){
+  containers.forEach(c=>{
+    c.target = 0; c.everOpened = false; c.kind = null; c.bug = null;
+    while (c.slot.children.length) c.slot.remove(c.slot.children[0]);
+  });
+  bugs = [];
+  const order = shuffle(containers.slice());
+  const n = Math.min(CONFIG.bugCount, order.length);
+  for (let i=0;i<n;i++){
+    const b = makeBug();
+    b.userData.runner = (i===n-1);
+    b.userData.ran = false; b.userData.busy = false; b.userData.home = order[i];
+    placeIn(b, order[i]); b.userData.base.copy(b.position);
+    bugs.push(b);
+  }
+  const kinds = shuffle(['key','letter','coins','moth','marble']);
+  order.slice(n).forEach((c,i)=>{
+    c.kind = kinds[i % kinds.length];
+    if (c.kind!=='moth') placeIn(makeTrinket(c.kind), c);
+  });
+  found = 0; won = false; startTime = clock; lastFind = clock; lastHint = clock;
+  updateCount(); $('win').hidden = true;
+  scene.traverse(o => { if (o.isMesh && !o.material.transparent){ o.castShadow = true; o.receiveShadow = true; } });
+}
+function updateCount(){
+  const holder = $('count');
+  while (holder.children.length < CONFIG.bugCount) holder.appendChild(document.createElement('i'));
+  while (holder.children.length > CONFIG.bugCount) holder.removeChild(holder.lastChild);
+  Array.prototype.forEach.call(holder.children, (el,i)=>el.classList.toggle('on', i<found));
+}
+function fmt(s){ s = Math.max(0, Math.floor(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+
+function toggle(c){
+  c.target = c.target ? 0 : 1;
+  if (c.name==='drawer') slide(c.target); else blip(c.target ? 220 : 170, 0.06);
+  if (c.target){
+    if (c.name==='drawer' && cam.pitchT < 0.72) cam.pitchT = 0.8;
+    if (!c.everOpened){
+      c.everOpened = true;
+      if (c.kind==='moth') setTimeout(()=>flyMoth(c), 260);
+    }
+    if (!bugs.some(b=>b.userData.home===c) && c.kind!=='moth'){
+      const L = EPISODE[c.name]; if (L){ c.epi = (c.epi===undefined ? Math.floor(Math.random()*L.length) : c.epi+1) % L.length; setTimeout(()=>toast(L[c.epi]), 350); }
+    }
+  }
+}
+// 館の主の物語 (書斎の小物)
+const EPISODE = {
+  drawer:['引き出しの奥に、虫ピンの小箱。標本の針は、てんとう虫の場所だけ、ずっと空いている。','古い帳簿に、走り書き。「娘の誕生日に、赤いガラス玉を買う」','インク壺がいくつも、空っぽで並んでいる。主は毎晩、何かを書いていた。','手紙の束。どれも「お父様、てんとう虫を見つけました」で始まる。','小さな虫めがね。持ち手が、小さな手にちょうどいい細さ。','引き出しの底に、七つ星の栞。はさまれたページは、見つからない。'],
+  book:['観察日記。「七月九日、晴れ。娘が七つ星をみつけた。私はまだ、一匹もみつけられない」','最後のページに、赤い押し花。「あの子は言った。てんとう虫は、つかまえずに見るものだと」','余白に、てんとう虫の落書き。主は絵が、あまり上手ではなかった。','ページのすみに、小さな指のあと。インクが乾く前に、だれかがさわった。'],
+  box:['小箱の底に、七つ星の銀のブローチ。留め針だけが、ていねいに磨かれている。','小箱の内側に、娘の字で「ひみつ」。何のひみつかは、書いていない。','小箱に鍵がひとつ。どの扉の鍵か、主は最後まで思い出せなかった。']
+};
+const LAMP_EPISODE = ['ランプがついた。主はこの灯りの下で、毎晩ひとりで日記を書いた。','ランプがついた。窓辺で、だれかの足音が止まった気がする。','ランプがついた。主はいつも、娘が帰る夜のために、灯りを残して寝た。'];
+let lampEpi = -1;
+function tapBug(bug){
+  const c = bug.userData.home;
+  if (bug.userData.busy) return;
+  if (c && c.t < 0.5){ toggle(c); return; }
+  if (bug.userData.runner && !bug.userData.ran){
+    const spots = containers.filter(k => k!==c && k.target===0 && !bugs.some(b=>b.userData.home===k));
+    if (spots.length){ runAway(bug, spots[Math.floor(Math.random()*spots.length)]); return; }
+  }
+  catchBug(bug);
+}
+function runAway(bug, dest){
+  bug.userData.ran = true; bug.userData.busy = true;
+  scene.attach(bug);
+  const from = bug.position.clone(), to = new THREE.Vector3();
+  dest.group.getWorldPosition(to);
+  const s0 = bug.scale.x;
+  blip(880, 0.05);
+  toast('あっ、逃げた! どこかに隠れたよ');
+  tween(0.95, k=>{
+    bug.position.lerpVectors(from, to, k);
+    bug.position.y += Math.sin(k*Math.PI)*0.7;
+    bug.rotation.y += 0.4;
+    bug.scale.setScalar(s0*(k<0.7 ? 1 : Math.max(0.02, 1-(k-0.7)/0.3)));
+  }, ()=>{
+    bug.rotation.set(0,0,0); bug.scale.setScalar(CONFIG.bugScale);
+    bug.userData.home = dest;
+    placeIn(bug, dest); bug.userData.base.copy(bug.position);
+    bug.userData.busy = false;
+    lastFind = clock;
+  });
+}
+function catchBug(bug){
+  bug.userData.busy = true; bug.userData.home = null;
+  scene.attach(bug);
+  const from = bug.position.clone(), s0 = bug.scale.x;
+  found++; lastFind = clock; updateCount();
+  blip(523, 0.09); setTimeout(()=>blip(784, 0.12), 110);
+  toast(found < CONFIG.bugCount ? 'みつけた! あと'+(CONFIG.bugCount-found)+'匹' : 'みつけた!');
+  tween(0.75, k=>{
+    bug.position.lerpVectors(from, camera.position, k*0.4);
+    bug.rotation.y += 0.25;
+    bug.scale.setScalar(s0*(1+k*1.4)*(k>0.8 ? Math.max(0.02,(1-k)/0.2) : 1));
+  }, ()=>{
+    scene.remove(bug);
+    bugs = bugs.filter(b=>b!==bug);
+    if (found >= CONFIG.bugCount){
+      won = true;
+      $('final').textContent = fmt(clock-startTime);
+      setTimeout(()=>{ $('win').hidden = false; $('again').focus(); }, 500);
+    }
+  });
+}
+$('again').addEventListener('click', ()=>{ ensureAudio(); setup(); });
+
+/* ---------- toast / sound ---------- */
+let toastTimer = 0;
+function toast(msg){
+  const el = $('toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>el.classList.remove('show'), Math.min(5200, 1800+msg.length*70));
+}
+let audio = null;
+function ensureAudio(){
+  if (audio) return;
+  try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) audio = new AC(); } catch(e){ audio = null; }
+}
+function blip(freq, dur){
+  if (!audio) return;
+  try {
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type = 'triangle'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.08, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur + 0.08);
+    o.connect(g); g.connect(audio.destination);
+    o.start(); o.stop(audio.currentTime + dur + 0.1);
+  } catch(e){}
+}
+
+function slide(open){
+  if (!audio) return;
+  try {
+    const dur = 0.28, n = Math.floor(audio.sampleRate*dur), buf = audio.createBuffer(1, n, audio.sampleRate), d = buf.getChannelData(0);
+    for (let i=0;i<n;i++) d[i] = (Math.random()*2-1)*(1-i/n);
+    const src = audio.createBufferSource(); src.buffer = buf;
+    const f = audio.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(open ? 350 : 700, audio.currentTime);
+    f.frequency.linearRampToValueAtTime(open ? 800 : 300, audio.currentTime + dur);
+    const g = audio.createGain(); g.gain.value = 0.14;
+    src.connect(f); f.connect(g); g.connect(audio.destination); src.start();
+    setTimeout(() => blip(open ? 150 : 110, 0.03), 250);
+  } catch(e){}
+}
+
+/* ---------- pointer input ---------- */
+const pointers = new Map();
+let moved = 0, downAt = 0, pinchDist = 0, multi = false;
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+const el = renderer.domElement;
+
+el.addEventListener('pointerdown', e=>{
+  try { el.setPointerCapture(e.pointerId); } catch(err){}
+  pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (pointers.size===1){ moved = 0; downAt = performance.now(); multi = false; }
+  else { multi = true; pinchDist = pinchLength(); }
+});
+el.addEventListener('pointermove', e=>{
+  const p = pointers.get(e.pointerId); if (!p) return;
+  const dx = e.clientX-p.x, dy = e.clientY-p.y;
+  p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size===1){
+    moved += Math.abs(dx)+Math.abs(dy);
+    if (moved > 8){
+      cam.yawT = THREE.MathUtils.clamp(cam.yawT - dx*0.005, -0.75, 0.75);
+      cam.pitchT = THREE.MathUtils.clamp(cam.pitchT + dy*0.005, 0.1, 1.1);
+    }
+  } else if (pointers.size===2){
+    const d = pinchLength();
+    if (pinchDist > 0) cam.zoomT = THREE.MathUtils.clamp(cam.zoomT * pinchDist/d, 0.5, 1.25);
+    pinchDist = d;
+  }
+});
+function endPointer(e){
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (e.type==='pointerup' && !multi && moved <= 8 && performance.now()-downAt < 600) tapAt(e.clientX, e.clientY);
+}
+el.addEventListener('pointerup', endPointer);
+el.addEventListener('pointercancel', endPointer);
+el.addEventListener('wheel', e=>{
+  e.preventDefault();
+  cam.zoomT = THREE.MathUtils.clamp(cam.zoomT * (e.deltaY>0 ? 1.08 : 0.93), 0.5, 1.25);
+}, {passive:false});
+function pinchLength(){
+  const a = Array.from(pointers.values());
+  return a.length<2 ? 0 : Math.hypot(a[0].x-a[1].x, a[0].y-a[1].y);
+}
+function tapAt(x, y){
+  ensureAudio();
+  if (won) return;
+  const r = el.getBoundingClientRect();
+  ndc.set(((x-r.left)/r.width)*2-1, -((y-r.top)/r.height)*2+1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(scene.children, true);
+  for (let i=0;i<hits.length;i++){
+    let o = hits[i].object, visible = true;
+    for (let p=o; p; p=p.parent) if (!p.visible) { visible = false; break; }
+    if (!visible) continue;
+    if (o.userData.tap) o.userData.tap();
+    return;
+  }
+}
+
+/* ---------- loop ---------- */
+let last = performance.now();
+function frame(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now; clock += dt;
+
+  // camera
+  const k = Math.min(1, dt*7);
+  cam.yaw += (cam.yawT-cam.yaw)*k; cam.pitch += (cam.pitchT-cam.pitch)*k; cam.zoom += (cam.zoomT-cam.zoom)*k;
+  const d = cam.base*cam.zoom;
+  camera.position.set(
+    camTarget.x + d*Math.sin(cam.yaw)*Math.cos(cam.pitch),
+    camTarget.y + d*Math.sin(cam.pitch),
+    camTarget.z + d*Math.cos(cam.yaw)*Math.cos(cam.pitch));
+  camera.lookAt(camTarget);
+
+  // lamp
+  const lampGoal = lampOn ? 1 : 0;
+  const lv = lampLight.userData.v = (lampLight.userData.v||0) + (lampGoal-(lampLight.userData.v||0))*Math.min(1,dt*6);
+  lampLight.intensity = 1.6*lv*(1 + 0.05*Math.sin(clock*13) + 0.03*Math.sin(clock*29.7)); fill.intensity = 0.4*lv; ambient.intensity = 0.36 + 0.2*lv;
+  extras.forEach(f => f(clock, lv, dt));
+  shadeMat.emissiveIntensity = 0.9*lv;
+
+  // containers
+  containers.forEach(c=>{
+    c.t += (c.target-c.t)*Math.min(1, dt*9);
+    c.apply(c, c.t);
+    c.slot.visible = c.t > 0.06;
+    if (c.shake > 0){ c.shake -= dt; c.group.position.x = c.baseX + Math.sin(clock*55)*0.012; }
+    else c.group.position.x = c.baseX;
+  });
+
+  // ladybugs wander
+  bugs.forEach(b=>{
+    if (b.userData.busy || reduceMotion) return;
+    const a = clock*0.9 + b.userData.phase;
+    b.position.set(b.userData.base.x + Math.cos(a)*0.035, b.userData.base.y, b.userData.base.z + Math.sin(a)*0.035);
+    b.rotation.y = -a;
+  });
+
+  // tweens
+  for (let i=tweens.length-1;i>=0;i--){
+    const tw = tweens[i]; tw.t += dt;
+    const kk = Math.min(1, tw.t/tw.dur);
+    tw.fn(kk);
+    if (kk>=1){ tweens.splice(i,1); if (tw.done) tw.done(); }
+  }
+
+  // hint
+  if (!won && clock-lastFind > CONFIG.hintAfterSec && clock-lastHint > 10){
+    const hidden = bugs.filter(b=>b.userData.home && b.userData.home.target===0 && !b.userData.busy);
+    if (hidden.length){
+      hidden[Math.floor(Math.random()*hidden.length)].userData.home.shake = 0.8;
+      toast('どこかで かさかさ音がする');
+    }
+    lastHint = clock;
+  }
+
+  if (!won) $('time').textContent = fmt(clock-startTime);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+setup();
+requestAnimationFrame(frame);
+})();
+</script>
+<style>
+#rn-btn{position:fixed;right:12px;bottom:46px;z-index:20;padding:8px 13px;font-size:13px;background:rgba(23,17,13,.82);color:#f1e4c8;border:1px solid #c9a04a;border-radius:2px}
+#rn{position:fixed;inset:0;z-index:30;display:none;align-items:center;justify-content:center;padding:16px;background:rgba(10,7,5,.65)}
+#rn.open{display:flex}
+#rn .c{width:100%;max-width:320px;padding:22px 18px;background:#17110d;border:1px solid #c9a04a;outline:1px solid rgba(201,160,74,.35);outline-offset:4px;text-align:center}
+#rn h2{margin:0 0 14px;font-size:20px}
+#rn a{display:block;margin:8px 0;padding:11px;color:#f1e4c8;border:1px solid #8a6f36;text-decoration:none;font-weight:700;background:rgba(201,160,74,.08)}
+#rn a.here{opacity:.45;pointer-events:none}
+#rn button{margin-top:8px;padding:8px 22px}
+</style>
+<button id="rn-btn" type="button">🚪 部屋へ</button>
+<div id="rn" role="dialog" aria-label="部屋を選ぶ"><div class="c"><h2>どの部屋へ行く?</h2>
+<a data-r="hall" href="../hall/">玄関ホール</a>
+<a data-r="salon" href="../salon/">応接室</a>
+<a data-r="library" href="../library/">図書室</a>
+<a data-r="bedroom" href="../bedroom/">令嬢の寝室</a>
+<a data-r="cabinet" href="../study/">書斎</a>
+<a data-r="top" href="../">🏠 トップページ</a>
+<button type="button" id="rn-x">閉じる</button></div></div>
+<script>
+(function(){var p=document.getElementById('rn'),b=document.getElementById('rn-btn');
+p.querySelector('[data-r="cabinet"]').classList.add('here');
+window.openRooms=function(){p.classList.add('open')};
+b.onclick=window.openRooms;document.getElementById('rn-x').onclick=function(){p.classList.remove('open')};
+p.addEventListener('click',function(e){if(e.target===p)p.classList.remove('open')});})();
+</script>
+</body>
+</html>
